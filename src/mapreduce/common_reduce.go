@@ -62,6 +62,7 @@ func doReduce(
 
 	outfile, _ := os.OpenFile(outFile, os.O_CREATE | os.O_WRONLY, 0666)
 	defer outfile.Close()
+	word_count := make(map[string] [] string)
 	for i :=0; i < nMap; i++{
 		file_name := reduceName(jobName, i, reduceTask)
 		file := file_mapping[file_name]
@@ -73,12 +74,18 @@ func doReduce(
 			} else if err != nil {
 				log.Fatal(err)
 			}
-
-			enc := json.NewEncoder(outfile)
-			var values[] string
-			enc.Encode(KeyValue{m.Key, reduceF(m.Key, values)})
+			//fmt.Printf("word count is %v", word_count[m.Key])
+			word_count[m.Key] = append(word_count[m.Key], m.Value)
 		}
 	}
+
+	for k, v := range word_count{
+		enc := json.NewEncoder(outfile)
+		enc.Encode(KeyValue{k, reduceF(k, v)})
+	}
+	//enc := json.NewEncoder(outfile)
+	//values := []string{"1","2","3","4","5"}
+	//enc.Encode(KeyValue{m.Key, reduceF(m.Key, values)})
 
 	//enc := json.NewEncoder(outFile())
 }
