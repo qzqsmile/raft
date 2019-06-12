@@ -1,6 +1,9 @@
 package mapreduce
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 //
 // schedule() starts and waits for all tasks in the given phase (mapPhase
@@ -30,5 +33,54 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	//
 	// Your code here (Part III, Part IV).
 	//
-	fmt.Printf("Schedule: %v done\n", phase)
+	//work_srv := <-registerChan
+	//if phase == mapPhase {
+	//	for i, file := range mapFiles {
+	//		task := new(DoTaskArgs)
+	//		task.JobName = jobName
+	//		task.File = file
+	//		task.Phase = phase
+	//		task.NumOtherPhase = n_other
+	//		task.TaskNumber = i
+	//		call(work_srv, "Worker.DoTask", task, nil)
+	//	}
+	//} else {
+	//	for i := 0; i < nReduce; i++ {
+	//		task := new(DoTaskArgs)
+	//		task.JobName = jobName
+	//		task.File = ""
+	//		task.Phase = phase
+	//		task.NumOtherPhase = n_other
+	//		task.TaskNumber = i
+	//		call(work_srv, "Worker.DoTask", task, nil)
+	//	}
+	//}
+
+	wp := new(sync.WaitGroup)
+	wp.Add(ntasks)
+
+	for i := 0; i < ntasks; i++ {
+		go func(taskNumber int) {
+			for {
+				worker := <-registerChan
+				taskArgs := DoTaskArgs{
+					JobName:       jobName,
+					File:          mapFiles[taskNumber],
+					Phase:         phase,
+					TaskNumber:    taskNumber,
+					NumOtherPhase: n_other,
+				}
+				ok := call(worker, "Worker.DoTask", taskArgs, nil)
+				if ok {
+					wp.Done()
+					registerChan <- worker
+					return
+				}
+			}
+		}(i)
+	}
+
+	wp.Wait()
+	fmt.Printf("Schedule: %v phase done\n", phase)
+
 }
