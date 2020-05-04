@@ -239,7 +239,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	isLeader = rf.raftState == Leader
 	rf.mu.Unlock()
 	if isLeader{
-		//isLeader = true
+		isLeader = true
 		rf.mu.Lock()
 		entry := LogEntries{rf.currentTerm, command}
 		rf.log = append(rf.log, entry)
@@ -532,7 +532,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if args.Term > rf.currentTerm{
 		rf.raftState = Follower
 	}
-	if rf.currentTerm > args.Term{
+	if rf.currentTerm < args.Term{
 		rf.currentTerm = args.Term
 		rf.votedFor = -1
 	}
