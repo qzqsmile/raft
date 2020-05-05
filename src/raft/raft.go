@@ -158,24 +158,19 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 	rf.mu.Lock()
 	reply.Term = rf.currentTerm
-	//if args.Term > rf.currentTerm{
-	//	rf.currentTerm = args.Term
-	//}qq
-	rf.mu.Unlock()
 	reply.VoteGranted = false
 	//DPrintf("before voted reply is %v, me id is %d, votedFor is %d, candidateId is %d, current term is %v, " +
 	//	"args term is %v", reply, rf.me, rf.votedFor, args.CandidateId, rf.currentTerm, args.LastLogTerm)
-	if rf.checkVotedFor(args.CandidateId) || rf.checkVotedFor(-1){
+	if rf.votedFor == args.CandidateId || rf.votedFor == -1{
 		lastIndex := len(rf.log)-1
 		lastLogTerm := rf.log[lastIndex].Term
 		if (args.LastLogTerm > lastLogTerm) ||
 			(args.LastLogTerm == lastLogTerm && args.LastLogIndex >= lastIndex) {
-			rf.mu.Lock()
 			rf.votedFor = args.CandidateId
-			rf.mu.Unlock()
 			reply.VoteGranted = true
 		}
 	}
+	rf.mu.Unlock()
 	//DPrintf("after voted reply is %v, me id is %d, votedFor is %d, candidateId is %d",
 	//	reply, rf.me, rf.votedFor, args.CandidateId)
 
@@ -411,7 +406,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 func (rf *Raft) sendHeartBeat(){
 	for{
-		time.Sleep(150* time.Millisecond)
+		time.Sleep(100* time.Millisecond)
 		if rf.checkRaftStatus(Leader) {
 			for i := 0; i < len(rf.peers); i++ {
 				if i != rf.me {
@@ -422,12 +417,12 @@ func (rf *Raft) sendHeartBeat(){
 					go func(server int) {
 						reply := AppendEntriesReply{0, false}
 						rf.sendAppendEntries(server, &args, &reply)
-					rf.mu.Lock()
-					if reply.Term > rf.currentTerm{
-						rf.raftState = Follower
-						rf.currentTerm = reply.Term
-					}
-					rf.mu.Unlock()
+						rf.mu.Lock()
+						if reply.Term > rf.currentTerm{
+							rf.raftState = Follower
+							rf.currentTerm = reply.Term
+						}
+						rf.mu.Unlock()
 					}(i)
 				}
 			}
@@ -529,10 +524,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// to do
 	rf.mu.Lock()
 	reply.Term = rf.currentTerm
-	if args.Term > rf.currentTerm{
-		rf.raftState = Follower
-	}
 	if rf.currentTerm < args.Term{
+		rf.raftState = Follower
 		rf.currentTerm = args.Term
 		rf.votedFor = -1
 	}
