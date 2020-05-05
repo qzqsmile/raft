@@ -155,7 +155,9 @@ type RequestVoteReply struct {
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
+	rf.mu.Lock()
 	reply.Term = rf.currentTerm
+	rf.mu.Unlock()
 	reply.VoteGranted = false
 	//DPrintf("before voted reply is %v, me id is %d, votedFor is %d, candidateId is %d, current term is %v, " +
 	//	"args term is %v", reply, rf.me, rf.votedFor, args.CandidateId, rf.currentTerm, args.LastLogTerm)
@@ -305,7 +307,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	go func() {
 		for{
 			time.Sleep(150* time.Millisecond)
-			if rf.checkRaftStatus(Leader) {
+			rf.mu.Lock()
+			if rf.raftState == Leader {
 				for i := 0; i < len(peers); i++ {
 					if i != me {
 						args := AppendEntriesArgs{rf.currentTerm, i, len(rf.log) - 2,
@@ -322,6 +325,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					}
 				}
 			}
+			rf.mu.Unlock()
 		}
 	}()
 
@@ -425,8 +429,8 @@ func leaderElection(rf *Raft, me int, peers []*labrpc.ClientEnd){
 //call in the server
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	// to do
-	reply.Term = rf.currentTerm
 	rf.mu.Lock()
+	reply.Term = rf.currentTerm
 	if args.Term > rf.currentTerm{
 		rf.raftState = Follower
 	}
