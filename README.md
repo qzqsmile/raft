@@ -1,4 +1,4 @@
-# mit6.824
+# mit6.824 Distributed Systems
 implement kv system based on raft <br>
 course url https://pdos.csail.mit.edu/6.824/
 - lab1 done
