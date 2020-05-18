@@ -498,9 +498,8 @@ func (rf *Raft) leaderElection(){
 		if i != rf.me {
 			go func(server int) {
 				reply := RequestVoteReply{}
-				ok := rf.sendRequestVote(server, &args, &reply)
-				rf.mu.Lock()
-				if ok {
+				if ok := rf.sendRequestVote(server, &args, &reply); ok {
+					rf.mu.Lock()
 					if reply.VoteGranted {
 						rf.votedCount++
 						if (rf.raftState == Candidate) && (rf.votedCount > len(rf.peers)/2){
@@ -510,6 +509,7 @@ func (rf *Raft) leaderElection(){
 							DPrintf("****************leader is %v, currentTerm is %v commit index is %v log is %v",
 								rf.me, rf.currentTerm, rf.commitIndex, rf.log)
 							rf.resetLeaderNextIndex()
+							rf.resetLeaderMatchIndex()
 						}
 					}
 					if reply.Term > rf.currentTerm{
@@ -517,8 +517,8 @@ func (rf *Raft) leaderElection(){
 						rf.currentTerm = reply.Term
 						rf.votedFor = -1
 					}
+					rf.mu.Unlock()
 				}
-				rf.mu.Unlock()
 			}(i)
 		}
 	}
@@ -526,7 +526,6 @@ func (rf *Raft) leaderElection(){
 
 //call in the server
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	// to do
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
@@ -551,16 +550,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	//when hit this branch mean in PrevLogIndex all commits are matched with the leader
-	//delete entries not match the leader commit
+	//delete entries not match the PreLogIndex
 	rf.log = rf.log[0:args.PrevLogIndex+1]
 
 	reply.Success = true
 	for i := 0; i < len(args.Entries); i++{
-		if len(rf.log) > i+args.PrevLogIndex+1 {
-			rf.log[args.PrevLogIndex+1+i] = args.Entries[i]
-		}else{
-			rf.log = append(rf.log, args.Entries[i])
-		}
+		rf.log = append(rf.log, args.Entries[i])
 	}
 
 	if args.LeaderCommit > rf.commitIndex{
@@ -579,6 +574,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 func (rf *Raft) resetLeaderNextIndex(){
 	for i := 0; i < len(rf.nextIndex); i++{
 		rf.nextIndex[i] = len(rf.log)
+	}
+}
+
+func (rf *Raft) resetLeaderMatchIndex(){
+	for i := 0; i < len(rf.matchIndex); i++{
+		rf.matchIndex[i] = 0
 	}
 }
 
