@@ -366,6 +366,7 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
 
 		cfg.mu.Lock()
 		cmd1, ok := cfg.logs[i][index]
+		//DPrintf("log is %v", cfg.logs)
 		cfg.mu.Unlock()
 
 		if ok {
@@ -452,8 +453,10 @@ func (cfg *config) one(cmd int, expectedServers int, retry bool) int {
 			t1 := time.Now()
 			for time.Since(t1).Seconds() < 2 {
 				nd, cmd1 := cfg.nCommitted(index)
+				//DPrintf("index is  %v nd is %v, cmd %v", index, nd, cmd1)
 				if nd > 0 && nd >= expectedServers {
 					// committed
+					//DPrintf("cmd2 %v cmd %v", cmd1.(int), cmd)
 					if cmd2, ok := cmd1.(int); ok && cmd2 == cmd {
 						// and it was the command we submitted.
 						return index
@@ -462,7 +465,11 @@ func (cfg *config) one(cmd int, expectedServers int, retry bool) int {
 				time.Sleep(20 * time.Millisecond)
 			}
 			if retry == false {
+				//for i := 0; i < cfg.n; i++ {
+				//	DPrintf("node is %v log is %v", i, cfg.rafts[i].log)
+				//}
 				cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
+
 			}
 		} else {
 			time.Sleep(50 * time.Millisecond)
