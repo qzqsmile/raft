@@ -18,6 +18,8 @@ package raft
 //
 
 import (
+	"bytes"
+	"labgob"
 	"labrpc"
 	"math/rand"
 	"sync"
@@ -105,12 +107,13 @@ func (rf *Raft) GetState() (int, bool) {
 func (rf *Raft) persist() {
 	// Your code here (2C).
 	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// data := w.Bytes()
-	// rf.persister.SaveRaftState(data)
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.log)
+	data := w.Bytes()
+	rf.persister.SaveRaftState(data)
 }
 
 //
@@ -122,17 +125,22 @@ func (rf *Raft) readPersist(data []byte) {
 	}
 	// Your code here (2C).
 	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var currentTerm int
+	var votedFor  int
+	var log []LogEntries
+	if d.Decode(&currentTerm) != nil ||
+	  d.Decode(&votedFor) != nil ||
+		d.Decode(&log) != nil{
+		DPrintf("deocde error")
+	} else {
+		rf.currentTerm = currentTerm
+		rf.votedFor = votedFor
+		rf.log = log
+	}
 }
 
 //
@@ -246,6 +254,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	isLeader := false
 
 	// Your code here (2B).
+	//rf.readPersist(rf.persister.ReadRaftState())
+
 	rf.mu.Lock()
 	if isLeader = rf.raftState == Leader; isLeader{
 		term = rf.currentTerm
@@ -310,10 +320,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.matchIndex = make([]int, len(rf.peers))
 
 	rf.resetLeaderNextIndex()
-	for i := 0; i < len(peers); i++ {
-		//rf.nextIndex = append(rf.nextIndex, len(rf.log)-1)
-		rf.matchIndex[i] =  0
-	}
+	rf.resetLeaderMatchIndex()
+
 	rf.raftState = Follower
 	rf.killHeartBeatLoop = make(chan struct{}, 1)
 	rf.killElectionEventLoop = make(chan struct{}, 1)
@@ -321,10 +329,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	go rf.leaderElectionEventLoop()
 	go rf.heartbeatEventLoop()
 
-	// rf.nextIndex = rf.leader
-	// rf.matchIndex = 0
 	// initialize from state persisted before a crash
-	rf.readPersist(persister.ReadRaftState())
+	rf.readPersist(rf.persister.ReadRaftState())
 
 	return rf
 }
@@ -440,9 +446,10 @@ func (rf *Raft) sendHeartbeat(){
 func (rf *Raft) leaderCommit(){
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	n := rf.commitIndex+1
+	n := len(rf.log)-1
 	var commitedMsgs []ApplyMsg
-	for;n < len(rf.log) && rf.log[n].Term == rf.currentTerm;{
+	//DPrintf("leader log is %v", rf.log)
+	for;n > 0 && rf.log[n].Term == rf.currentTerm;{
 		c := 0
 		for i := 0; i < len(rf.matchIndex); i++{
 			if rf.matchIndex[i] >= n{
@@ -450,12 +457,17 @@ func (rf *Raft) leaderCommit(){
 			}
 		}
 		if c * 2 > len(rf.peers){
+			for j := rf.commitIndex+1; j <= n; j++{
+				commitedMsgs = append(commitedMsgs, ApplyMsg{true,
+					rf.log[j].Command, j})
+			}
+			go rf.updateCfgLogs(commitedMsgs)
 			rf.commitIndex = n
-			commitedMsgs = append(commitedMsgs,ApplyMsg{true, rf.log[n].Command,
-				n})
+			break
 		}
-		n++
+		n--
 	}
+	rf.persist()
 	go rf.updateCfgLogs(commitedMsgs)
 }
 
@@ -505,7 +517,7 @@ func (rf *Raft) leaderElection(){
 						if (rf.raftState == Candidate) && (rf.votedCount > len(rf.peers)/2){
 							rf.raftState = Leader
 							//leader never commit before term index, so remove aren't able update index
-							rf.log = rf.log[0:rf.commitIndex+1]
+							//rf.log = rf.log[0:rf.commitIndex+1]
 							DPrintf("****************leader is %v, currentTerm is %v commit index is %v log is %v",
 								rf.me, rf.currentTerm, rf.commitIndex, rf.log)
 							rf.resetLeaderNextIndex()
@@ -539,7 +551,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.votedFor = -1
 	}
 
-
 	if args.Term < rf.currentTerm{
 		reply.Success = false
 		return
@@ -566,7 +577,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 				rf.log[i].Command, i})
 		}
 		go rf.updateCfgLogs(Msgs)
-
+		rf.persist()
 		rf.commitIndex = commitIndex
 	}
 }
