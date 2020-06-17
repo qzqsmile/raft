@@ -421,13 +421,11 @@ func (rf *Raft) sendHeartbeat() {
 										break
 									}
 									if reply.Success == false {
-										rf.nextIndex[server] = rf.nextIndex[server] - 1
+										rf.nextIndex[server] = args.PrevLogIndex - 1
 										nextIndex = rf.nextIndex[server]
 									} else {
 										rf.matchIndex[server] = args.PrevLogIndex + len(entries)
-										rf.nextIndex[server] = rf.nextIndex[server] + len(entries)
-
-										//if existe n > commitindex which majority rf.matchindex[n] > commitindex
+										rf.nextIndex[server] = args.PrevLogIndex + len(entries)+1
 										go rf.leaderCommit()
 									}
 									islonger = len(rf.log)-1 >= rf.nextIndex[server]
@@ -469,7 +467,7 @@ func (rf *Raft) leaderCommit() {
 		n--
 	}
 	rf.persist()
-	go rf.updateCfgLogs(commitedMsgs)
+	//go rf.updateCfgLogs(commitedMsgs)
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
@@ -519,8 +517,9 @@ func (rf *Raft) leaderElection() {
 							rf.raftState = Leader
 							//leader never commit before term index, so remove aren't able update index
 							//rf.log = rf.log[0:rf.commitIndex+1]
-							DPrintf("****************leader is %v, currentTerm is %v commit index is %v log is %v",
-								rf.me, rf.currentTerm, rf.commitIndex, rf.log)
+							DPrintf("****************leader is %v, currentTerm is %v commit index is %v log is %v" +
+								"nextIndex is %v",
+								rf.me, rf.currentTerm, rf.commitIndex, rf.log, rf.nextIndex)
 							rf.resetLeaderNextIndex()
 							rf.resetLeaderMatchIndex()
 						}
