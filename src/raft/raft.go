@@ -408,7 +408,7 @@ func (rf *Raft) sendHeartbeat() {
 								//DPrintf("me is %v next index is %v, rf.log is %v commitindex is %v send to %v " +
 								//	"args is %v, raft state is %v",
 								//	rf.me, rf.nextIndex, rf.log, rf.commitIndex, server, args, rf.raftState)
-								reply := AppendEntriesReply{0, false}
+								reply := AppendEntriesReply{0, false, 0, 0}
 								rf.mu.Unlock()
 								if ok := rf.sendAppendEntries(server, &args, &reply); ok {
 									rf.mu.Lock()
@@ -416,12 +416,12 @@ func (rf *Raft) sendHeartbeat() {
 									if reply.Term > rf.currentTerm {
 										rf.raftState = Follower
 										rf.currentTerm = reply.Term
-										rf.mu.Unlock()
 										rf.persist()
+										rf.mu.Unlock()
 										break
 									}
 									if reply.Success == false {
-										rf.nextIndex[server] = args.PrevLogIndex - 1
+										rf.nextIndex[server] = reply.ConflictIndex
 										nextIndex = rf.nextIndex[server]
 									} else {
 										rf.matchIndex[server] = args.PrevLogIndex + len(entries)
@@ -467,7 +467,6 @@ func (rf *Raft) leaderCommit() {
 		n--
 	}
 	rf.persist()
-	//go rf.updateCfgLogs(commitedMsgs)
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
@@ -493,6 +492,9 @@ type AppendEntriesArgs struct {
 type AppendEntriesReply struct {
 	Term    int
 	Success bool
+
+	ConflictIndex int
+	ConflictTerm int
 }
 
 func (rf *Raft) leaderElection() {
@@ -557,8 +559,21 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		reply.Success = false
 		return
 	}
-	if len(rf.log)-1 < args.PrevLogIndex || (rf.log[args.PrevLogIndex].Term != args.PrevLogTerm) {
+	if len(rf.log)-1 < args.PrevLogIndex ||
+		(rf.log[args.PrevLogIndex].Term != args.PrevLogTerm) {
 		reply.Success = false
+		if len(rf.log)-1 < args.PrevLogIndex {
+			reply.ConflictIndex = len(rf.log)
+		} else{
+			reply.ConflictTerm = rf.log[args.PrevLogIndex].Term
+			for i := args.PrevLogIndex; i >= 0; i--{
+				if rf.log[i].Term == rf.log[args.PrevLogIndex].Term{
+					reply.ConflictIndex = i
+				}else{
+					break
+				}
+			}
+		}
 		return
 	}
 
