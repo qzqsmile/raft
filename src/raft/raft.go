@@ -193,12 +193,16 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 			rf.resetTimer()
 		}
 	}
-	//DPrintf("after voted reply is %v, me id is %d, votedFor is %d, candidateId is %d",
-	//	reply, rf.me, rf.votedFor, args.CandidateId)
+	rf.persist()
+	//if reply.VoteGranted {
+	//	DPrintf("in voting, my node is %v vote to %v, my log is %v isVoted %v, args is %v",
+	//		rf.me, args.CandidateId, rf.log, reply.VoteGranted, args)
+	//}
+
 
 }
 
-//
+
 // example code to send a RequestVote RPC to a server.
 // server is the index of the target server in rf.peers[].
 // expects RPC arguments in args.
@@ -261,6 +265,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		rf.log = append(rf.log, LogEntries{rf.currentTerm, command})
 		rf.matchIndex[rf.me] = len(rf.log) - 1
 	}
+	rf.persist()
 	rf.mu.Unlock()
 	//leader commit vs commitIndex
 	return index, term, isLeader
@@ -408,7 +413,7 @@ func (rf *Raft) sendHeartbeat() {
 								//DPrintf("me is %v next index is %v, rf.log is %v commitindex is %v send to %v " +
 								//	"args is %v, raft state is %v",
 								//	rf.me, rf.nextIndex, rf.log, rf.commitIndex, server, args, rf.raftState)
-								reply := AppendEntriesReply{0, false}
+								reply := AppendEntriesReply{0, false, 0, 0}
 								rf.mu.Unlock()
 								if ok := rf.sendAppendEntries(server, &args, &reply); ok {
 									rf.mu.Lock()
@@ -416,12 +421,12 @@ func (rf *Raft) sendHeartbeat() {
 									if reply.Term > rf.currentTerm {
 										rf.raftState = Follower
 										rf.currentTerm = reply.Term
-										rf.mu.Unlock()
 										rf.persist()
+										rf.mu.Unlock()
 										break
 									}
 									if reply.Success == false {
-										rf.nextIndex[server] = args.PrevLogIndex - 1
+										rf.nextIndex[server] = reply.ConflictIndex
 										nextIndex = rf.nextIndex[server]
 									} else {
 										rf.matchIndex[server] = args.PrevLogIndex + len(entries)
@@ -447,7 +452,7 @@ func (rf *Raft) leaderCommit() {
 	defer rf.mu.Unlock()
 	n := len(rf.log) - 1
 	var commitedMsgs []ApplyMsg
-	//DPrintf("leader log is %v", rf.log)
+
 	for ; n > 0 && rf.log[n].Term == rf.currentTerm; {
 		c := 0
 		for i := 0; i < len(rf.matchIndex); i++ {
@@ -466,8 +471,6 @@ func (rf *Raft) leaderCommit() {
 		}
 		n--
 	}
-	rf.persist()
-	//go rf.updateCfgLogs(commitedMsgs)
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
@@ -493,6 +496,9 @@ type AppendEntriesArgs struct {
 type AppendEntriesReply struct {
 	Term    int
 	Success bool
+
+	ConflictIndex int
+	ConflictTerm int
 }
 
 func (rf *Raft) leaderElection() {
@@ -511,15 +517,15 @@ func (rf *Raft) leaderElection() {
 				reply := RequestVoteReply{}
 				if ok := rf.sendRequestVote(server, &args, &reply); ok {
 					rf.mu.Lock()
-					if reply.VoteGranted {
+					if reply.VoteGranted && args.Term == rf.currentTerm{
 						rf.votedCount++
 						if (rf.raftState == Candidate) && (rf.votedCount > len(rf.peers)/2) {
 							rf.raftState = Leader
 							//leader never commit before term index, so remove aren't able update index
 							//rf.log = rf.log[0:rf.commitIndex+1]
-							DPrintf("****************leader is %v, currentTerm is %v commit index is %v log is %v" +
-								"nextIndex is %v",
-								rf.me, rf.currentTerm, rf.commitIndex, rf.log, rf.nextIndex)
+							//DPrintf("****************leader is %v, currentTerm is %v commit index is %v log is %v" +
+							//	"nextIndex is %v",
+							//	rf.me, rf.currentTerm, rf.commitIndex, rf.log, rf.nextIndex)
 							rf.resetLeaderNextIndex()
 							rf.resetLeaderMatchIndex()
 						}
@@ -553,20 +559,52 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.persist()
 	}
 
+	//rf currentTerm is more update
 	if args.Term < rf.currentTerm {
 		reply.Success = false
 		return
 	}
-	if len(rf.log)-1 < args.PrevLogIndex || (rf.log[args.PrevLogIndex].Term != args.PrevLogTerm) {
+
+	if len(rf.log)-1 < args.PrevLogIndex ||
+		(rf.log[args.PrevLogIndex].Term != args.PrevLogTerm) {
 		reply.Success = false
+		if len(rf.log)-1 < args.PrevLogIndex {
+			reply.ConflictIndex = len(rf.log)
+		} else{
+			reply.ConflictTerm = rf.log[args.PrevLogIndex].Term
+			for i := args.PrevLogIndex; i >= 0; i--{
+				if rf.log[i].Term == rf.log[args.PrevLogIndex].Term{
+					reply.ConflictIndex = i
+				}else{
+					break
+				}
+			}
+		}
 		return
 	}
 
 	//when hit this branch mean in PrevLogIndex all commits are matched with the leader
 	//delete entries not match the PreLogIndex
-	rf.log = rf.log[0 : args.PrevLogIndex+1]
 
+	//if len(rf.log) >= args.PrevLogIndex + len(args.Entries){
+	//	isMatch := true
+	//	for i := 0; i < len(args.Entries); i++ {
+	//		if args.Entries[i] != rf.log[i+args.PrevLogIndex+1] {
+	//			isMatch = false
+	//		}
+	//	}
+	//	if isMatch == false{
+	//		rf.log = rf.log[0 : args.PrevLogIndex+1]
+	//		rf.log = append(rf.log, args.Entries...)
+	//	}
+	//}else {
+	//	rf.log = rf.log[0 : args.PrevLogIndex+1]
+	//	rf.log = append(rf.log, args.Entries...)
+	//}
+
+	rf.log = rf.log[0 : args.PrevLogIndex+1]
 	reply.Success = true
+
 	rf.log = append(rf.log, args.Entries...)
 
 	if args.LeaderCommit > rf.commitIndex {
