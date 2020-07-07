@@ -314,7 +314,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	//first index is 1?
 	rf.applyCh = applyCh
 	rf.log = []LogEntries{LogEntries{0, 0}}
-	rf.applyCh <- ApplyMsg{true, 0, 0}
+
+	//rf.applyCh <- ApplyMsg{true, 0, 0}
 
 	rf.commitIndex = 0
 	rf.lastApplied = 0
