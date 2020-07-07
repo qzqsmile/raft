@@ -8,7 +8,7 @@ import (
 	"sync"
 )
 
-const Debug = 1
+const Debug = 0
 
 const (
 	WrongLeader  bool = true
@@ -107,14 +107,12 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
-
 	if _, isLeader := kv.rf.GetState(); !isLeader {
 		reply.WrongLeader = WrongLeader
 		reply.Err = ""
 		return
 	}
-	DPrintf("get here")
-	// 防止重复请求
+
 	kv.mu.Lock()
 	if latestReply, ok := kv.latestReplies[args.Cid]; ok && args.Seq <= latestReply.Seq {
 		reply.WrongLeader = IsLeader
@@ -127,15 +125,14 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	command := Op{Operation:args.Op, Key:args.Key, Value:args.Value, Cid:args.Cid, Seq:args.Seq}
 	index, term, _ := kv.rf.Start(command)
 
-	// 阻塞等待结果
 	kv.mu.Lock()
 	ch := make(chan struct{})
 	kv.notify[index] = ch
 	kv.mu.Unlock()
+
 	select {
 	case <-ch:
 		curTerm, isLeader := kv.rf.GetState()
-		DPrintf("%v got notify at index %v, isLeader = %v\n", kv.me, index, isLeader)
 		if !isLeader || curTerm != term {
 			reply.WrongLeader = WrongLeader
 			reply.Err = NotLeader
@@ -189,6 +186,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.db = make(map[string]string)
 	kv.latestReplies = make(map[int64]*LatestReply)
 	kv.notify = make(map[int] chan struct{})
+	go kv.applyDaemon()
 
 	return kv
 }
@@ -198,6 +196,7 @@ func (kv *KVServer) applyDaemon()  {
 	for appliedEntry := range kv.applyCh {
 		command := appliedEntry.Command.(Op)
 
+		//DPrintf("get here")
 		// 执行命令, 过滤已经执行过得命令
 		kv.mu.Lock()
 		if latestReply, ok := kv.latestReplies[command.Cid]; !ok || command.Seq > latestReply.Seq {
@@ -226,7 +225,6 @@ func (kv *KVServer) applyDaemon()  {
 		}
 
 		DPrintf("%d applied index:%d, cmd:%v\n", kv.me, appliedEntry.CommandIndex, command)
-
 		// 通知
 		if ch, ok := kv.notify[appliedEntry.CommandIndex]; ok && ch != nil {
 			DPrintf("%d notify index %d\n",kv.me, appliedEntry.CommandIndex)

@@ -49,12 +49,11 @@ func (ck *Clerk) Get(key string) string {
 
 	// You will have to modify this function.
 	getArgs := GetArgs{Key: key, Cid:ck.cid, Seq:ck.seq}
-	reply := GetReply{}
 
 	for {
 		doneCh := make(chan bool, 1)
+		reply := GetReply{}
 		go func() {
-			//发送Get() RPC
 			ok := ck.servers[ck.lastLeader].Call("KVServer.Get", &getArgs, &reply)
 			doneCh <- ok
 		}()
@@ -64,9 +63,7 @@ func (ck *Clerk) Get(key string) string {
 			DPrintf("clerk(%d) retry PutAppend after timeout\n", ck.cid)
 			continue
 		case ok := <- doneCh:
-			//收到响应后，并且是leader返回的，那么说明这个命令已经执行了
 			if ok && reply.WrongLeader == false {
-				//请求序列号加1
 				ck.seq++
 				return reply.Value
 			}
@@ -93,11 +90,10 @@ func (ck *Clerk) Get(key string) string {
 func (ck *Clerk) PutAppend(key string, value string, op string) {
 	// You will have to modify this function.
 	args := PutAppendArgs{Key: key, Value: value, Op:op, Cid: ck.cid, Seq: ck.seq}
-	reply := PutAppendReply{}
 	for {
 		doneCh := make(chan bool, 1)
+		reply := PutAppendReply{WrongLeader:false, Err: ""}
 		go func() {
-			//发送Get() RPC
 			ok := ck.servers[ck.lastLeader].Call("KVServer.PutAppend", &args, &reply)
 			doneCh <- ok
 		}()
@@ -114,7 +110,6 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 				return
 			}
 		}
-
 		ck.lastLeader++
 		ck.lastLeader %= len(ck.servers)
 	}
