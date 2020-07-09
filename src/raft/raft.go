@@ -26,8 +26,19 @@ import (
 	"time"
 )
 
-// import "bytes"
-// import "labgob"
+//will remover for later
+type Op struct {
+	// Your definitions here.
+	// Field names must start with capital letters,
+	// otherwise RPC will break.
+	Operation string
+	Key string
+	Cid int64
+	Seq int
+	Value string
+
+
+}
 
 //
 // as each Raft peer becomes aware that successive log entries are
@@ -85,6 +96,12 @@ type Raft struct {
 	killHeartBeatLoop     chan struct{}
 
 	//heartBeatDone chan struct{}
+
+	maxraftstate int
+}
+
+func (rf *Raft) SetRaftState(maxraftstate int) {
+	rf.maxraftstate = maxraftstate
 }
 
 // return currentTerm and whether this server
@@ -111,6 +128,21 @@ func (rf *Raft) persist() {
 	e.Encode(rf.votedFor)
 	e.Encode(rf.log)
 	data := w.Bytes()
+	if len(data) >= rf.maxraftstate{
+		w := new(bytes.Buffer)
+		es := labgob.NewEncoder(w)
+		es.Encode(rf.commitIndex)
+		es.Encode(rf.log[rf.commitIndex].Term)
+		mp := make(map[string]string)
+		for i := 0; i < len(rf.log); i++{
+			mp[rf.log[i].Command.(Op).Key] = rf.log[i].Command.(Op).Value
+		}
+		es.Encode(mp)
+		snapshot := w.Bytes()
+		rf.persister.SaveStateAndSnapshot(data, snapshot)
+		rf.log = rf.log[0:rf.commitIndex+1]
+		return
+	}
 	rf.persister.SaveRaftState(data)
 }
 
@@ -335,6 +367,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// initialize from state persisted before a crash
 	rf.readPersist(rf.persister.ReadRaftState())
+
+	rf.maxraftstate = -1
 
 	return rf
 }
