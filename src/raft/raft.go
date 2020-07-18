@@ -392,6 +392,9 @@ func (rf *Raft) sendHeartbeat() {
 						rf.votedFor = -1
 						rf.persist()
 					}
+					if entriesArgs.Term != rf.currentTerm{
+						return
+					}
 					if reply.Success == false {
 						go func(server int) {
 							rf.mu.Lock()
