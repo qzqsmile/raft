@@ -397,6 +397,9 @@ func (rf *Raft) sendHeartbeat() {
 						rf.votedFor = -1
 						rf.persist()
 					}
+					if entriesArgs.Term != rf.currentTerm{
+						return
+					}
 					//leader send its log to follower if false
 					if reply.Success == false {
 						rf.leaderSendInstallSnap(server, reply.ConflictIndex)
