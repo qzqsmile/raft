@@ -1,6 +1,7 @@
 package raftkv
 
 import (
+	"bytes"
 	"labgob"
 	"labrpc"
 	"log"
@@ -46,9 +47,11 @@ type KVServer struct {
 
 	// Your definitions here.
 
+	persister *raft.Persister
 	db      map[string]string
 	latestReplies map[int64]*LatestReply
 	notify map[int]chan struct{}
+	lastIncludedIndex int
 }
 
 type LatestReply struct {
@@ -129,7 +132,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	ch := make(chan struct{})
 	kv.notify[index] = ch
 	kv.mu.Unlock()
-
+	//DPrintf("index is %v, term is %v", index, term)
 	select {
 	case <-ch:
 		curTerm, isLeader := kv.rf.GetState()
@@ -183,9 +186,11 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
 	// You may need initialization code here.
+	kv.persister = persister
 	kv.db = make(map[string]string)
 	kv.latestReplies = make(map[int64]*LatestReply)
 	kv.notify = make(map[int] chan struct{})
+	kv.lastIncludedIndex = 0
 	go kv.applyDaemon()
 
 	return kv
@@ -194,43 +199,78 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 func (kv *KVServer) applyDaemon()  {
 	for appliedEntry := range kv.applyCh {
-		command := appliedEntry.Command.(Op)
-
-		//DPrintf("get here")
-		// 执行命令, 过滤已经执行过得命令
 		kv.mu.Lock()
-		if latestReply, ok := kv.latestReplies[command.Cid]; !ok || command.Seq > latestReply.Seq {
-			switch command.Operation {
-			case "Get":
-				latestReply := LatestReply{Seq:command.Seq,}
-				reply := GetReply{}
-				if value, ok := kv.db[command.Key]; ok {
-					reply.Value = value
-				} else {
-					reply.Err = ErrNoKey
+		//defer kv.mu.Unlock()
+		//DPrintf("case 1 command is %v", appliedEntry.Command)
+		if appliedEntry.CommandValid {
+			command := appliedEntry.Command.(Op)
+			// 执行命令, 过滤已经执行过得命令
+			//DPrintf("case 2")
+			if latestReply, ok := kv.latestReplies[command.Cid]; !ok || command.Seq > latestReply.Seq {
+				//DPrintf("case 3")
+				switch command.Operation {
+				case "Get":
+					latestReply := LatestReply{Seq: command.Seq,}
+					reply := GetReply{}
+					if value, ok := kv.db[command.Key]; ok {
+						reply.Value = value
+					} else {
+						reply.Err = ErrNoKey
+					}
+					latestReply.Reply = reply
+					kv.latestReplies[command.Cid] = &latestReply
+				case "Put":
+					kv.db[command.Key] = command.Value
+					latestReply := LatestReply{Seq: command.Seq}
+					kv.latestReplies[command.Cid] = &latestReply
+				case "Append":
+					kv.db[command.Key] += command.Value
+					latestReply := LatestReply{Seq: command.Seq}
+					kv.latestReplies[command.Cid] = &latestReply
+				default:
+					panic("invalid command operation")
 				}
-				latestReply.Reply = reply
-				kv.latestReplies[command.Cid] = &latestReply
-			case "Put":
-				kv.db[command.Key] = command.Value
-				latestReply := LatestReply{Seq:command.Seq}
-				kv.latestReplies[command.Cid] = &latestReply
-			case "Append":
-				kv.db[command.Key] += command.Value
-				latestReply := LatestReply{Seq:command.Seq}
-				kv.latestReplies[command.Cid] = &latestReply
-			default:
-				panic("invalid command operation")
+			}
+			DPrintf("%d applied index:%d, cmd:%v \n", kv.me, appliedEntry.CommandIndex, command)
+			if ch, ok := kv.notify[appliedEntry.CommandIndex]; ok && ch != nil {
+				DPrintf("%d notify index %d\n", kv.me, appliedEntry.CommandIndex)
+				close(ch)
+				delete(kv.notify, appliedEntry.CommandIndex)
+			}
+		}else{
+			if appliedEntry.Command == "snapshot"{
+				snapshot := kv.persister.ReadSnapshot()
+				if snapshot == nil || len(snapshot) < 1 {
+					kv.mu.Unlock()
+					//return
+					continue
+				}
+				r := bytes.NewBuffer(snapshot)
+				d := labgob.NewDecoder(r)
+				if error := d.Decode(&kv.db); error != nil{
+					DPrintf("Decode snapshot error!")
+				}
+				//DPrintf("-----------read snapshot----- kv is %v", kv.db)
 			}
 		}
 
-		DPrintf("%d applied index:%d, cmd:%v\n", kv.me, appliedEntry.CommandIndex, command)
-		// 通知
-		if ch, ok := kv.notify[appliedEntry.CommandIndex]; ok && ch != nil {
-			DPrintf("%d notify index %d\n",kv.me, appliedEntry.CommandIndex)
-			close(ch)
-			delete(kv.notify, appliedEntry.CommandIndex)
+		if kv.persister.RaftStateSize() >= kv.maxraftstate{
+			//DPrintf("----------------start savesnapshot--------------- client is %v", kv.me)
+			w := new(bytes.Buffer)
+			e := labgob.NewEncoder(w)
+			e.Encode(kv.db)
+			snapshot := w.Bytes()
+			kv.rf.SaveSnapshot(appliedEntry.CommandIndex, snapshot)
+			kv.lastIncludedIndex = appliedEntry.CommandIndex
 		}
+
+
+		// 通知
+		//if ch, ok := kv.notify[appliedEntry.CommandIndex]; ok && ch != nil {
+		//	DPrintf("%d notify index %d\n", kv.me, appliedEntry.CommandIndex)
+		//	close(ch)
+		//	delete(kv.notify, appliedEntry.CommandIndex)
+		//}
 		kv.mu.Unlock()
 	}
 }
