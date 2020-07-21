@@ -111,6 +111,8 @@ func (rf *Raft) persist() {
 	e.Encode(rf.votedFor)
 	e.Encode(rf.log)
 	e.Encode(rf.lastIncludedIndex)
+	e.Encode(rf.lastIncludedTerm)
+	e.Encode(rf.commitIndex)
 	data := w.Bytes()
 	rf.persister.SaveRaftState(data)
 }
@@ -133,11 +135,13 @@ func (rf *Raft) readPersist(data []byte) {
 	var log []LogEntries
 	var lastIncludedIndex int
 	var lastIncludedTerm int
+	var commitIndex int
 	if d.Decode(&currentTerm) != nil ||
 		d.Decode(&votedFor) != nil ||
 		d.Decode(&log) != nil ||
 		d.Decode(&lastIncludedIndex)!= nil ||
-		d.Decode(&lastIncludedTerm) != nil{
+		d.Decode(&lastIncludedTerm) != nil ||
+		d.Decode(&commitIndex) != nil{
 		DPrintf("Persist Deocde Error!")
 	} else {
 		rf.currentTerm = currentTerm
@@ -145,6 +149,7 @@ func (rf *Raft) readPersist(data []byte) {
 		rf.log = log
 		rf.lastIncludedIndex = lastIncludedIndex
 		rf.lastIncludedTerm = lastIncludedTerm
+		rf.commitIndex = commitIndex
 	}
 }
 
@@ -407,9 +412,9 @@ func (rf *Raft) sendHeartbeat() {
 							rf.mu.Lock()
 							nextIndex := rf.nextIndex[server]
 							islonger := rf.addLastIncludedIndex(len(rf.log)-1) >= rf.nextIndex[server]
-							DPrintf("islonger is %v %v %v, nextindex is %v", islonger,
-								rf.addLastIncludedIndex(len(rf.log)-1),
-								rf.nextIndex[server], rf.subLastIncludedIndex(nextIndex))
+							//DPrintf("islonger is %v %v %v, nextindex is %v", islonger,
+							//	rf.addLastIncludedIndex(len(rf.log)-1),
+							//	rf.nextIndex[server], rf.subLastIncludedIndex(nextIndex))
 							rf.mu.Unlock()
 							for ; islonger && rf.subLastIncludedIndex(nextIndex) >= 1; {
 								rf.mu.Lock()
@@ -784,3 +789,7 @@ func (rf *Raft) leaderSendInstallSnap(server int, conflictIndex int){
 		}
 	}
 }
+
+//func (rf *Raft) ReadPersist() {
+//	rf.readPersist(rf.persister.ReadRaftState())
+//}
