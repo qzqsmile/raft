@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-const Debug = 0
+const Debug = 1
 
 const (
 	WrongLeader  bool = true
@@ -256,9 +256,10 @@ func (kv *KVServer) applyDaemon()  {
 			}
 		}
 
-		if kv.persister.RaftStateSize() >= kv.maxraftstate{
-			DPrintf("server is %v -------------startsnapshot----------------- raft state size size is %v",
-				kv.me, kv.persister.RaftStateSize())
+		if kv.maxraftstate != -1 && kv.persister.RaftStateSize() >= kv.maxraftstate{
+			DPrintf("server is %v -------------startsnapshot----------------- " +
+				"raft state size size is %v kvmax is %v",
+				kv.me, kv.persister.RaftStateSize(), kv.maxraftstate)
 			w := new(bytes.Buffer)
 			e := labgob.NewEncoder(w)
 			e.Encode(kv.db)
