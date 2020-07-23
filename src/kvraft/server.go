@@ -191,6 +191,8 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.latestReplies = make(map[int64]*LatestReply)
 	kv.notify = make(map[int] chan struct{})
 	kv.lastIncludedIndex = 0
+	kv.readSnapshot()
+	//kv.rf.ReadPersist()
 	go kv.applyDaemon()
 
 	return kv
@@ -232,6 +234,7 @@ func (kv *KVServer) applyDaemon()  {
 				}
 			}
 			DPrintf("%d applied index:%d, cmd:%v \n", kv.me, appliedEntry.CommandIndex, command)
+
 			if ch, ok := kv.notify[appliedEntry.CommandIndex]; ok && ch != nil {
 				DPrintf("%d notify index %d\n", kv.me, appliedEntry.CommandIndex)
 				close(ch)
@@ -242,7 +245,6 @@ func (kv *KVServer) applyDaemon()  {
 				snapshot := kv.persister.ReadSnapshot()
 				if snapshot == nil || len(snapshot) < 1 {
 					kv.mu.Unlock()
-					//return
 					continue
 				}
 				r := bytes.NewBuffer(snapshot)
@@ -255,10 +257,12 @@ func (kv *KVServer) applyDaemon()  {
 		}
 
 		if kv.persister.RaftStateSize() >= kv.maxraftstate{
-			//DPrintf("----------------start savesnapshot--------------- client is %v", kv.me)
+			DPrintf("server is %v -------------startsnapshot----------------- raft state size size is %v",
+				kv.me, kv.persister.RaftStateSize())
 			w := new(bytes.Buffer)
 			e := labgob.NewEncoder(w)
 			e.Encode(kv.db)
+			e.Encode(kv.latestReplies)
 			snapshot := w.Bytes()
 			kv.rf.SaveSnapshot(appliedEntry.CommandIndex, snapshot)
 			kv.lastIncludedIndex = appliedEntry.CommandIndex
@@ -272,5 +276,18 @@ func (kv *KVServer) applyDaemon()  {
 		//	delete(kv.notify, appliedEntry.CommandIndex)
 		//}
 		kv.mu.Unlock()
+	}
+}
+
+func (kv *KVServer) readSnapshot() {
+	snapshot := kv.persister.ReadSnapshot()
+	if snapshot == nil || len(snapshot) < 1 {
+		return
+	}
+	r := bytes.NewBuffer(snapshot)
+	d := labgob.NewDecoder(r)
+	if d.Decode(&kv.db) != nil ||
+		d.Decode(&kv.latestReplies) != nil{
+		log.Fatal("Decode snapshot error!")
 	}
 }

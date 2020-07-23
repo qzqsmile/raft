@@ -136,21 +136,52 @@ func (rf *Raft) readPersist(data []byte) {
 	var lastIncludedIndex int
 	var lastIncludedTerm int
 	var commitIndex int
-	if d.Decode(&currentTerm) != nil ||
-		d.Decode(&votedFor) != nil ||
-		d.Decode(&log) != nil ||
-		d.Decode(&lastIncludedIndex)!= nil ||
-		d.Decode(&lastIncludedTerm) != nil ||
-		d.Decode(&commitIndex) != nil{
-		DPrintf("Persist Deocde Error!")
-	} else {
-		rf.currentTerm = currentTerm
-		rf.votedFor = votedFor
-		rf.log = log
-		rf.lastIncludedIndex = lastIncludedIndex
-		rf.lastIncludedTerm = lastIncludedTerm
-		rf.commitIndex = commitIndex
+
+	e1 := d.Decode(&currentTerm)
+	e2 := d.Decode(&votedFor)
+	e3 := d.Decode(&log)
+	e4 := d.Decode(&lastIncludedIndex)
+	e5 := d.Decode(&lastIncludedTerm)
+	e6 := d.Decode(&commitIndex)
+	if e1 != nil{
+		DPrintf("e1 error is %v", e1)
 	}
+	if e2 != nil{
+		DPrintf("e2 error is %v", e2)
+	}
+	if e3 != nil{
+		DPrintf("e3 error is %v", e3)
+	}
+	if e4 != nil{
+		DPrintf("e4 error is %v", e4)
+	}
+	if e5 != nil{
+		DPrintf("e5 error is %v", e5)
+	}
+	if e6 != nil{
+		DPrintf("e6 error is %v", e6)
+	}
+	rf.currentTerm = currentTerm
+	rf.votedFor = votedFor
+	rf.log = log
+	rf.lastIncludedIndex = lastIncludedIndex
+	rf.lastIncludedTerm = lastIncludedTerm
+	rf.commitIndex = min(commitIndex, lastIncludedIndex)
+	//if d.Decode(&currentTerm) != nil ||
+	//	d.Decode(&votedFor) != nil ||
+	//	d.Decode(&log) != nil ||
+	//	d.Decode(&lastIncludedIndex)!= nil ||
+	//	d.Decode(&lastIncludedTerm) != nil ||
+	//	d.Decode(&commitIndex) != nil{
+	//	DPrintf("Persist Decode Error!")
+	//} else {
+	//	rf.currentTerm = currentTerm
+	//	rf.votedFor = votedFor
+	//	rf.log = log
+	//	rf.lastIncludedIndex = lastIncludedIndex
+	//	rf.lastIncludedTerm = lastIncludedTerm
+	//	rf.commitIndex = min(commitIndex, lastIncludedIndex)
+	//}
 }
 
 //
@@ -291,6 +322,9 @@ func (rf *Raft) updateCfgLogs(applyMsgs []ApplyMsg) {
 //
 func (rf *Raft) Kill() {
 	// Your code here, if desired.
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.persist()
 	rf.killElectionEventLoop <- struct{}{}
 	rf.killHeartBeatLoop <- struct{}{}
 }
@@ -345,7 +379,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// initialize from state persisted before a crash
 	rf.readPersist(rf.persister.ReadRaftState())
-
+	DPrintf("me is %v rf lastindex is %v commitindex is %v log is %v ",
+		rf.me, rf.lastIncludedIndex, rf.commitIndex, rf.log)
 	return rf
 }
 
@@ -415,8 +450,9 @@ func (rf *Raft) sendHeartbeat() {
 							//DPrintf("islonger is %v %v %v, nextindex is %v", islonger,
 							//	rf.addLastIncludedIndex(len(rf.log)-1),
 							//	rf.nextIndex[server], rf.subLastIncludedIndex(nextIndex))
+							inCurrentIndex := rf.subLastIncludedIndex(nextIndex)
 							rf.mu.Unlock()
-							for ; islonger && rf.subLastIncludedIndex(nextIndex) >= 1; {
+							for ; islonger && inCurrentIndex >= 1; {
 								rf.mu.Lock()
 								if rf.raftState != Leader {
 									rf.mu.Unlock()
@@ -455,6 +491,7 @@ func (rf *Raft) sendHeartbeat() {
 										go rf.leaderCommit()
 									}
 									islonger = rf.addLastIncludedIndex(len(rf.log)-1) >= rf.nextIndex[server]
+									inCurrentIndex = rf.subLastIncludedIndex(nextIndex)
 									rf.mu.Unlock()
 								} else {
 									break
@@ -592,7 +629,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	//	" commitIndex is %v log is %v", args, rf.me, len(rf.log), rf.lastIncludedIndex,
 	//	len(rf.log)-1 < rf.subLastIncludedIndex(args.PrevLogIndex), rf.commitIndex, rf.log)
 	//}
-
+	DPrintf("me is %v lastincludeindex is %v args prev is %v",
+		rf.me, rf.lastIncludedIndex, args.PrevLogIndex)
 	if len(rf.log)-1 < rf.subLastIncludedIndex(args.PrevLogIndex) ||
 		(rf.log[rf.subLastIncludedIndex(args.PrevLogIndex)].Term != args.PrevLogTerm &&
 			rf.subLastIncludedIndex(args.PrevLogIndex) != 0) {
@@ -681,6 +719,7 @@ func(rf *Raft) SaveSnapshot(lastIndex int, snapShot []byte){
 		rf.lastIncludedIndex = lastIndex
 		rf.lastIncludedTerm = rf.log[startIndex].Term
 		rf.log = append([]LogEntries{{rf.lastIncludedTerm, 0}}, rf.log[startIndex+1:]...)
+		DPrintf("rf.log len is %v", len(rf.log))
 		data := rf.getPersistedData()
 		rf.persister.SaveStateAndSnapshot(data, snapShot)
 	}
@@ -692,6 +731,9 @@ func(rf *Raft) getPersistedData() []byte{
 	e.Encode(rf.currentTerm)
 	e.Encode(rf.votedFor)
 	e.Encode(rf.log)
+	e.Encode(rf.lastIncludedIndex)
+	e.Encode(rf.lastIncludedTerm)
+	e.Encode(rf.commitIndex)
 	data := w.Bytes()
 	return data
 }
