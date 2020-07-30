@@ -349,7 +349,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.lastIncludedTerm = 0
 
 	rf.notifyApplyCh = make(chan struct{}, 100)
-	rf.shutdownApply = make(chan struct{})
+	rf.shutdownApply = make(chan struct{}, 1)
 
 	go rf.leaderElectionEventLoop()
 	go rf.heartbeatEventLoop()
