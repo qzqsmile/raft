@@ -60,7 +60,7 @@ func (ck *Clerk) Get(key string) string {
 
 		select {
 		case <-time.After(600 * time.Millisecond):
-			DPrintf("clerk(%d) retry PutAppend after timeout\n", ck.cid)
+			DPrintf("clerk(%d) retry Get after timeout\n", ck.cid)
 			continue
 		case ok := <- doneCh:
 			if ok && reply.WrongLeader == false {
@@ -100,7 +100,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 
 		select {
 		case <-time.After(600 * time.Millisecond):
-			DPrintf("clerk(%d) retry PutAppend after timeout\n", ck.cid)
+			DPrintf("clerk(%d) retry PutAppend after timeout args is %v\n", ck.cid, args)
 			continue
 		case ok := <- doneCh:
 			//收到响应后，并且是leader返回的，那么说明这个命令已经执行了
