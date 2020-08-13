@@ -6,4 +6,7 @@ course url https://pdos.csail.mit.edu/6.824/
 - lab2 
    2A done
    2B done
-   2c doing
+   2c done
+- lab3
+   3A done
+   3B done
