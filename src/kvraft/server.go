@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-const Debug = 1
+const Debug = 0
 
 const (
 	WrongLeader  bool = true
@@ -68,6 +68,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		return
 	}
 
+	DPrintf("me is %v Get args is %v case 1", kv.me, args)
 	// 防止重复请求
 	kv.mu.Lock()
 	if latestReply, ok := kv.latestReplies[args.Cid]; ok && args.Seq <= latestReply.Seq {
@@ -87,8 +88,10 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	ch := make(chan struct{})
 	kv.notify[index] = ch
 	kv.mu.Unlock()
+	DPrintf("me is %v Get args is %v case 2", kv.me, args)
 	select {
 	case <-ch:
+		DPrintf("me is %v Get args is %v case 3 index is %v", kv.me, args, index)
 		curTerm, isLeader := kv.rf.GetState()
 		DPrintf("%v got notify at index %v, isLeader = %v\n", kv.me, index, isLeader)
 		if !isLeader || curTerm != term {
@@ -135,6 +138,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	//DPrintf("index is %v, term is %v", index, term)
 	select {
 	case <-ch:
+		DPrintf("args is %v case 3, index is %v", args, index)
 		curTerm, isLeader := kv.rf.GetState()
 		if !isLeader || curTerm != term {
 			reply.WrongLeader = WrongLeader
@@ -235,6 +239,7 @@ func (kv *KVServer) applyDaemon()  {
 			}
 			DPrintf("%d applied index:%d, cmd:%v \n", kv.me, appliedEntry.CommandIndex, command)
 
+			//only one kv server listen this commit index
 			if ch, ok := kv.notify[appliedEntry.CommandIndex]; ok && ch != nil {
 				DPrintf("%d notify index %d\n", kv.me, appliedEntry.CommandIndex)
 				close(ch)
@@ -271,16 +276,18 @@ func (kv *KVServer) applyDaemon()  {
 
 
 		// 通知
-		//if ch, ok := kv.notify[appliedEntry.CommandIndex]; ok && ch != nil {
-		//	DPrintf("%d notify index %d\n", kv.me, appliedEntry.CommandIndex)
-		//	close(ch)
-		//	delete(kv.notify, appliedEntry.CommandIndex)
-		//}
+		if ch, ok := kv.notify[appliedEntry.CommandIndex]; ok && ch != nil {
+			DPrintf("%d notify index %d\n", kv.me, appliedEntry.CommandIndex)
+			close(ch)
+			delete(kv.notify, appliedEntry.CommandIndex)
+		}
 		kv.mu.Unlock()
 	}
 }
 
 func (kv *KVServer) readSnapshot() {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
 	snapshot := kv.persister.ReadSnapshot()
 	if snapshot == nil || len(snapshot) < 1 {
 		return

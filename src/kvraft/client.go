@@ -98,18 +98,21 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 			doneCh <- ok
 		}()
 
+		DPrintf("args is %v case 1", args)
 		select {
 		case <-time.After(600 * time.Millisecond):
 			DPrintf("clerk(%d) retry PutAppend after timeout args is %v\n", ck.cid, args)
 			continue
 		case ok := <- doneCh:
 			//收到响应后，并且是leader返回的，那么说明这个命令已经执行了
+			DPrintf("args is %v case 2", args)
 			if ok && reply.WrongLeader == false {
 				//请求序列号加1
 				ck.seq++
 				return
 			}
 		}
+		DPrintf("value is %v case 3", value)
 		ck.lastLeader++
 		ck.lastLeader %= len(ck.servers)
 	}
