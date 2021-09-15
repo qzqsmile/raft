@@ -1,6 +1,8 @@
 package shardkv
 
-import "linearizability"
+import (
+	"linearizability"
+)
 
 import "testing"
 import "strconv"
@@ -32,7 +34,7 @@ func TestStaticShards(t *testing.T) {
 
 	cfg.join(0)
 	cfg.join(1)
-
+	DPrintf("step 1")
 	n := 10
 	ka := make([]string, n)
 	va := make([]string, n)

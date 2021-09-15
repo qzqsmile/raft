@@ -8,7 +8,10 @@ package shardkv
 // talks to the group that holds the key's shard.
 //
 
-import "labrpc"
+import (
+	"fmt"
+	"labrpc"
+)
 import "crypto/rand"
 import "math/big"
 import "shardmaster"
@@ -108,6 +111,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 	for {
 		shard := key2shard(key)
 		gid := ck.config.Shards[shard]
+		fmt.Println(ck.config)
 		if servers, ok := ck.config.Groups[gid]; ok {
 			for si := 0; si < len(servers); si++ {
 				srv := ck.make_end(servers[si])

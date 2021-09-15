@@ -2,12 +2,24 @@ package shardkv
 
 
 // import "shardmaster"
-import "labrpc"
+import (
+	"labrpc"
+	"log"
+)
 import "raft"
 import "sync"
 import "labgob"
 
 
+const Debug = 1
+
+
+func DPrintf(format string, a ...interface{}) (n int, err error) {
+	if Debug > 0 {
+		log.Printf(format, a...)
+	}
+	return
+}
 
 type Op struct {
 	// Your definitions here.
