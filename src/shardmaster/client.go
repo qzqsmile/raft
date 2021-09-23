@@ -4,10 +4,12 @@ package shardmaster
 // Shardmaster clerk.
 //
 
-import "labrpc"
-import "time"
-import "crypto/rand"
-import "math/big"
+import (
+	"crypto/rand"
+	"labrpc"
+	"math/big"
+	"time"
+)
 
 type Clerk struct {
 	servers []*labrpc.ClientEnd
@@ -36,6 +38,7 @@ func (ck *Clerk) Query(num int) Config {
 		// try each known server.
 		for _, srv := range ck.servers {
 			var reply QueryReply
+			DPrintf("%v servers ok srv is %v \n", len(ck.servers), srv)
 			ok := srv.Call("ShardMaster.Query", args, &reply)
 			if ok && reply.WrongLeader == false {
 				return reply.Config
@@ -44,7 +47,6 @@ func (ck *Clerk) Query(num int) Config {
 		time.Sleep(100 * time.Millisecond)
 	}
 }
-
 func (ck *Clerk) Join(servers map[int][]string) {
 	args := &JoinArgs{}
 	// Your code here.

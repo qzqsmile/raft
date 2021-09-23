@@ -10,6 +10,7 @@ import "fmt"
 
 func check(t *testing.T, groups []int, ck *Clerk) {
 	c := ck.Query(-1)
+
 	if len(c.Groups) != len(groups) {
 		t.Fatalf("wanted %v groups, got %v", len(groups), len(c.Groups))
 	}
@@ -31,7 +32,6 @@ func check(t *testing.T, groups []int, ck *Clerk) {
 			}
 		}
 	}
-
 	// more or less balanced sharding?
 	counts := map[int]int{}
 	for _, g := range c.Shards {
@@ -47,6 +47,7 @@ func check(t *testing.T, groups []int, ck *Clerk) {
 			min = counts[g]
 		}
 	}
+
 	if max > min+1 {
 		t.Fatalf("max %v too much larger than min %v", max, min)
 	}
@@ -89,11 +90,12 @@ func TestBasic(t *testing.T) {
 	cfa := make([]Config, 6)
 	cfa[0] = ck.Query(-1)
 
-	check(t, []int{}, ck)
-
+	// check(t, []int{}, ck)
 	var gid1 int = 1
 	ck.Join(map[int][]string{gid1: []string{"x", "y", "z"}})
 	check(t, []int{gid1}, ck)
+
+
 	cfa[1] = ck.Query(-1)
 
 	var gid2 int = 2
