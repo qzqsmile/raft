@@ -1,12 +1,12 @@
 package shardmaster
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 )
 
 // import "time"
-import "fmt"
 
 func check(t *testing.T, groups []int, ck *Clerk) {
 	c := ck.Query(-1)
@@ -90,11 +90,10 @@ func TestBasic(t *testing.T) {
 	cfa := make([]Config, 6)
 	cfa[0] = ck.Query(-1)
 
-	// check(t, []int{}, ck)
+	check(t, []int{}, ck)
 	var gid1 int = 1
 	ck.Join(map[int][]string{gid1: []string{"x", "y", "z"}})
 	check(t, []int{gid1}, ck)
-
 
 	cfa[1] = ck.Query(-1)
 
